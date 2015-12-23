@@ -68,6 +68,11 @@ class FamilyFotoFlipper extends Command
         }
 
         //check $sourceFolder and $destinationFolder look and smell like folders
+        if(!is_dir($sourceFolder) or !is_dir($destinationFolder))
+        {
+        	$this->error('Please ensure that sourcefolder and destinationfolder are actually folders');
+        	exit(1);	//non-zero
+        }
 
         $files = Storage::allFiles($sourceFolder);
         foreach($files as $file){DUMP($file);}
