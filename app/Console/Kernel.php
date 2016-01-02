@@ -14,6 +14,7 @@ class Kernel extends ConsoleKernel
      */
     protected $commands = [
         \App\Console\Commands\FamilyFotoFlipper::class,
+        \App\Console\Commands\DuplicateFileMarker::class,
     ];
 
     /**

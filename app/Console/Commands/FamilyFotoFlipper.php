@@ -25,7 +25,9 @@ class FamilyFotoFlipper extends Command
         {destinationfolder : Destination folder eg. /could/be/anywhere/mysortedphotos}
         {--c|create-only-contentful-folders : Do not create destination month (or day) folders that would be empty}
 		{--d|create-day-folders : Also create destination day (of month) folders}
-        {--p|priority-date-for-sort=metadata : Date to use for sorting; metadata (photo file tags), filecreate or filemodified.}
+        {--p|priority-date-for-sort=metadata : Date to use for sorting; metadata (photo file tags) or filemodified.}
+        {--o|on-duplicate=rename : If two filenames clash when putting in destinationfolder, rename or clobber?}
+        {--s|separate-videos-and-photos : When copying to destinationfolder, put videos and photos in separate folders (but still sorted accordingly by date)}
         ';
 
     /**
@@ -58,13 +60,18 @@ class FamilyFotoFlipper extends Command
     	$reporting['photo-but-corrupt-metadata-date'] = 0;
     	$reporting['probably-not-a-photo'] = 0;
     	$reporting['photos-renamed-for-copy-to-destination'] = 0;
+    	$reporting['photos-clobbered-for-copy-to-destination'] = 0;
 
     	//get the inputs
         $sourceFolder = $this->argument('sourcefolder');
         $destinationFolder = $this->argument('destinationfolder');
-        $createOnlyContentfulFolders = $this->option('create-only-contentful-folders');
+        $createOnlyContentfulFolders = $this->option('create-only-contentful-folders');	//support for this is TODO
         $createDayFolders = $this->option('create-day-folders');
         $priorityDateForSort = $this->option('priority-date-for-sort');
+        $onDuplicate = $this->option('on-duplicate');
+        $separateVideosAndPhotos = $this->option('separate-videos-and-photos');
+
+        //----input sanity checks----------------------------------------------
 
         //set allowed options for --priority-date-for-sort (-p)
         $allowedPriorityDateForSort = ['metadata', 'filemodified'];
@@ -76,6 +83,16 @@ class FamilyFotoFlipper extends Command
         	exit(1);	//non-zero
         }
 
+        //set allowed options for --on-duplicate (-o)
+        $allowedOnDuplicate = ['rename', 'clobber'];
+
+        //check option passed for --on-duplicate (-o) is allowed
+        if(!in_array($onDuplicate, $allowedOnDuplicate))
+        {
+        	$this->error('--on-duplicate (-o) must be one of ' . implode(', ', $allowedOnDuplicate));
+        	exit(1);	//non-zero
+        }
+
         //check $sourceFolder and $destinationFolder look and smell like folders
         //if(!is_dir($sourceFolder) or !is_dir($destinationFolder))
         if(!Storage::has($sourceFolder) or !Storage::has($destinationFolder))
@@ -84,6 +101,7 @@ class FamilyFotoFlipper extends Command
         	exit(1);	//non-zero
         }
 
+        //----/end input sanity checks-----------------------------------------
 
         // reader with Native adapter
 		$reader = \PHPExif\Reader\Reader::factory(\PHPExif\Reader\Reader::TYPE_NATIVE);
@@ -98,9 +116,14 @@ class FamilyFotoFlipper extends Command
 
         $bar = $this->output->createProgressBar(count($files));
 
+        //$counter = 1;
+
         foreach($files as $file)
         {
-        	//DUMP($file);	//string filepath
+        	//DUMP($counter . '] ' . $file);	//string filepath
+	       	//DUMP($file . '---' . pathinfo(storage_path('app') . '/' . $file, PATHINFO_EXTENSION) . '----' . Storage::getMimetype($file));
+        	//$counter++;
+        	//CONTINUE;
         	
         	try
         	{
@@ -185,13 +208,32 @@ class FamilyFotoFlipper extends Command
         	$month = $dateToUse->format('m');
         	$day = $dateToUse->format('d');
 
-        	$targetFolder = "{$destinationFolder}/{$year}/{$month}/";
+        	$targetSubfolder = "{$year}/{$month}/";
 
+        	//support --create-day-folders
         	if($createDayFolders)
         	{
-        		$targetFolder = "{$destinationFolder}/{$year}/{$month}/{$day}/";
+        		$targetSubfolder = "{$year}/{$month}/{$day}/";
         	}
 
+        	//support --separate-videos-and-photos
+        	if($separateVideosAndPhotos)
+        	{
+				$mimetype = Storage::getMimetype($file);
+
+				if(str_contains($mimetype, 'video') or strtolower(pathinfo(storage_path('app') . '/' . $file, PATHINFO_EXTENSION)) == 'mts')
+				{
+					$targetSubfolder = "videos/{$targetSubfolder}";
+				}
+
+				else
+				{
+					$targetSubfolder = "photos/{$targetSubfolder}";
+				}
+        		
+        	}
+
+        	$targetFolder = "{$destinationFolder}/{$targetSubfolder}";
 
         	$finalDestination = $targetFolder . pathinfo($file, PATHINFO_BASENAME);
 
@@ -205,13 +247,29 @@ class FamilyFotoFlipper extends Command
         	catch(\League\Flysystem\FileExistsException $exception)
         	{
 
-        		$reporting['photos-renamed-for-copy-to-destination']++;
-        	
-        		$newFinalDestination = $targetFolder . mt_rand(111, 999) . pathinfo($file, PATHINFO_BASENAME);
+        		if($onDuplicate == 'rename')
+        		{
+	        		$reporting['photos-renamed-for-copy-to-destination']++;
+	        	
+	        		$pathParts = pathinfo($file);	//will not contain 'extension' index if file has no extension
+	        		if(!array_key_exists('extension', $pathParts))
+	        		{
+	        			$pathParts['extension'] = '';
+	        		}
 
-        		$this->error("{$finalDestination} already exists in destinationfolder. Renaming to {$newFinalDestination}");
+	        		$newFinalDestination = $targetFolder . $pathParts['filename'] . '_alt_' . mt_rand(1111, 9999) . '.' . $pathParts['extension'];
 
-        		Storage::copy($file, $newFinalDestination);
+	        		$this->error("{$finalDestination} already exists in destinationfolder. Renaming to {$newFinalDestination}");
+
+	        		Storage::copy($file, $newFinalDestination);
+	        	}
+
+	        	elseif($onDuplicate == 'clobber')
+	        	{
+	        		//NOTE this is more of a NOP than an actual overwrite clobber (ie. first one is kept)
+	        		
+	        		$reporting['photos-clobbered-for-copy-to-destination']++;
+	        	}
         	}
         	
         		
