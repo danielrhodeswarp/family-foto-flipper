@@ -26,7 +26,7 @@ use \Exception;
  * 
  * @author Daniel Rhodes <daniel.rhodes@warpasylum.co.uk>
  */
-class FamilyFotoFlipper extends Command
+class FamilyFotoFlipper_ORIG extends Command
 {
 	/**
      * The name and signature of the console command.
